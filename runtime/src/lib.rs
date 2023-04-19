@@ -27,6 +27,7 @@ use sp_version::RuntimeVersion;
 pub use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{
+		AsEnsureOriginWithArg,
 		ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo,
 	},
 	weights::{
@@ -37,7 +38,7 @@ pub use frame_support::{
 	},
 	StorageValue,
 };
-pub use frame_system::Call as SystemCall;
+pub use frame_system::{Call as SystemCall, EnsureSigned};
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::{ConstFeeMultiplier, CurrencyAdapter, Multiplier};
@@ -136,6 +137,14 @@ pub fn native_version() -> NativeVersion {
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
 parameter_types! {
+	pub const CollectionDeposit: Balance = 10 * 1_1000;
+	pub const KeyLimit: u32 = 32;
+	pub const ValueLimit: u32 = 256;
+	pub const ItemDeposit: Balance = 100 * 1_000;
+	pub const UniquesStringLimit: u32 = 128;
+	pub const UniquesMetadataDepositBase: Balance = 10 * 1_000;
+	pub const AttributeDepositBase: Balance = 10 * 1_000;
+	pub const DepositPerByte: Balance = 1_1000;
 	pub const BlockHashCount: BlockNumber = 2400;
 	pub const Version: RuntimeVersion = VERSION;
 	/// We allow for 2 seconds of compute with a 6 second average block time.
@@ -245,6 +254,25 @@ impl pallet_balances::Config for Runtime {
 	type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
 }
 
+impl pallet_uniques::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type CollectionId = u32;
+	type ItemId = u32;
+	type Currency = Balances;
+	type ForceOrigin = frame_system::EnsureRoot<AccountId>;
+	type CreateOrigin = AsEnsureOriginWithArg<EnsureSigned<AccountId>>;
+	type Locker = ();
+	type CollectionDeposit = CollectionDeposit;
+	type ItemDeposit = ItemDeposit;
+	type MetadataDepositBase = UniquesMetadataDepositBase;
+	type AttributeDepositBase = AttributeDepositBase;
+	type DepositPerByte = DepositPerByte;
+	type StringLimit = UniquesStringLimit;
+	type KeyLimit = KeyLimit;
+	type ValueLimit = ValueLimit;
+	type WeightInfo = ();
+}
+
 parameter_types! {
 	pub FeeMultiplier: Multiplier = Multiplier::one();
 }
@@ -285,6 +313,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
+		Uniques: pallet_uniques::{Pallet, Call, Storage, Event<T>}
 	}
 );
 
