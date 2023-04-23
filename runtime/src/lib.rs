@@ -6,6 +6,9 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use codec::Compact;
+use frame_system::EnsureRoot;
+use frame_support::traits::Contains;
 use pallet_grandpa::AuthorityId as GrandpaId;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -68,6 +71,9 @@ pub type Index = u32;
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
 
+/// Id used for identifying assets.
+pub type AssetId = u128;
+
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
 /// of data like extrinsics, allowing for them to continue syncing the network through upgrades
@@ -128,6 +134,18 @@ pub const MINUTES: BlockNumber = 60_000 / (MILLISECS_PER_BLOCK as BlockNumber);
 pub const HOURS: BlockNumber = MINUTES * 60;
 pub const DAYS: BlockNumber = HOURS * 24;
 
+/// Constant values used with the runtime
+pub const MICROXCAV: Balance = 1_000_000_000_000;
+pub const MILLIXCAV: Balance = 1_000 * MICROXCAV;
+pub const XCAV: Balance = 1_000 * MILLIXCAV;
+pub const INIT_SUPPLY_FACTOR: Balance = 100;
+pub const STORAGE_BYTE_FEE: Balance = 20 * MICROXCAV * INIT_SUPPLY_FACTOR;
+
+/// Charge fee for stored bytes and items.
+pub const fn deposit(items: u32, bytes: u32) -> Balance {
+	items as Balance * 100 * MILLIXCAV * INIT_SUPPLY_FACTOR + (bytes as Balance) * STORAGE_BYTE_FEE
+}
+
 /// The version information used to identify this runtime when compiled natively.
 #[cfg(feature = "std")]
 pub fn native_version() -> NativeVersion {
@@ -147,6 +165,14 @@ parameter_types! {
 	pub const DepositPerByte: Balance = 1_1000;
 	pub const BlockHashCount: BlockNumber = 2400;
 	pub const Version: RuntimeVersion = VERSION;
+
+	/// pallet-assets
+	pub const AssetDeposit: Balance = 10 * INIT_SUPPLY_FACTOR * XCAV;
+	pub const MetadataDepositBase: Balance = deposit(1, 68);
+	pub const MetadataDepositPerByte: Balance = deposit(0, 1);
+	pub const AssetAccountDeposit: Balance = deposit(1, 18);
+	pub const AssetsStringLimit: u32 = 50;
+
 	/// We allow for 2 seconds of compute with a 6 second average block time.
 	pub BlockWeights: frame_system::limits::BlockWeights =
 		frame_system::limits::BlockWeights::with_sensible_defaults(
@@ -156,6 +182,25 @@ parameter_types! {
 	pub BlockLength: frame_system::limits::BlockLength = frame_system::limits::BlockLength
 		::max_with_normal_ratio(5 * 1024 * 1024, NORMAL_DISPATCH_RATIO);
 	pub const SS58Prefix: u8 = 42;
+}
+
+pub struct BaseFilter;
+impl Contains<RuntimeCall> for BaseFilter {
+    fn contains(call: &RuntimeCall) -> bool {
+        match call {
+            // Filter permission-less assets creation/destroying.
+            // Custom asset's `id` should fit in `u32` as not to mix with service assets.
+            RuntimeCall::Assets(method) => match method {
+                pallet_assets::Call::create { id, .. } => *id < (u32::MAX as AssetId).into(),
+
+                _ => true,
+            },
+            // These modules are not allowed to be called by transactions:
+            // To leave collator just shutdown it, next session funds will be released
+            // Other modules should works:
+            _ => true,
+        }
+    }
 }
 
 // Configure FRAME pallets to include in runtime.
@@ -273,6 +318,30 @@ impl pallet_uniques::Config for Runtime {
 	type WeightInfo = ();
 }
 
+impl pallet_assets::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type Balance = Balance;
+	type AssetId = AssetId;
+	type Currency = Balances;
+	type CreateOrigin = AsEnsureOriginWithArg<EnsureSigned<AccountId>>;
+	type ForceOrigin = EnsureRoot<AccountId>;
+	type AssetDeposit = AssetDeposit;
+	type MetadataDepositBase = MetadataDepositBase;
+	type MetadataDepositPerByte = MetadataDepositPerByte;
+	type AssetAccountDeposit = AssetAccountDeposit;
+	type ApprovalDeposit = ConstU128<EXISTENTIAL_DEPOSIT>;
+	type StringLimit = AssetsStringLimit;
+	type Freezer = ();
+	type Extra = ();
+	type WeightInfo = pallet_assets::weights::SubstrateWeight<Runtime>;
+	type RemoveItemsLimit = ConstU32<1000>;
+	type AssetIdParameter = Compact<AssetId>;
+	type CallbackHandle = ();
+
+}
+
+
+
 parameter_types! {
 	pub FeeMultiplier: Multiplier = Multiplier::one();
 }
@@ -313,7 +382,9 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
-		Uniques: pallet_uniques::{Pallet, Call, Storage, Event<T>}
+		Uniques: pallet_uniques::{Pallet, Call, Storage, Event<T>},
+		// Assets: pallet_assets = 36,
+		Assets: pallet_assets::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
