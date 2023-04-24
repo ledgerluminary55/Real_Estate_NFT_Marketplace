@@ -7,8 +7,8 @@
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use codec::Compact;
-use frame_system::EnsureRoot;
 use frame_support::traits::Contains;
+use frame_system::EnsureRoot;
 use pallet_grandpa::AuthorityId as GrandpaId;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -30,8 +30,8 @@ use sp_version::RuntimeVersion;
 pub use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{
-		AsEnsureOriginWithArg,
-		ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo,
+		AsEnsureOriginWithArg, ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem,
+		Randomness, StorageInfo,
 	},
 	weights::{
 		constants::{
@@ -43,6 +43,7 @@ pub use frame_support::{
 };
 pub use frame_system::{Call as SystemCall, EnsureSigned};
 pub use pallet_balances::Call as BalancesCall;
+// pub use pallet_assets::Call as AssetsCall;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::{ConstFeeMultiplier, CurrencyAdapter, Multiplier};
 #[cfg(any(feature = "std", test))]
@@ -50,7 +51,7 @@ pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 
 /// Import the template pallet.
-pub use pallet_template;
+pub use pallet_user;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -173,6 +174,8 @@ parameter_types! {
 	pub const AssetAccountDeposit: Balance = deposit(1, 18);
 	pub const AssetsStringLimit: u32 = 50;
 
+	pub const UserStringLimit: u32 = 5;
+
 	/// We allow for 2 seconds of compute with a 6 second average block time.
 	pub BlockWeights: frame_system::limits::BlockWeights =
 		frame_system::limits::BlockWeights::with_sensible_defaults(
@@ -186,21 +189,21 @@ parameter_types! {
 
 pub struct BaseFilter;
 impl Contains<RuntimeCall> for BaseFilter {
-    fn contains(call: &RuntimeCall) -> bool {
-        match call {
-            // Filter permission-less assets creation/destroying.
-            // Custom asset's `id` should fit in `u32` as not to mix with service assets.
-            RuntimeCall::Assets(method) => match method {
-                pallet_assets::Call::create { id, .. } => *id < (u32::MAX as AssetId).into(),
+	fn contains(call: &RuntimeCall) -> bool {
+		match call {
+			// Filter permission-less assets creation/destroying.
+			// Custom asset's `id` should fit in `u32` as not to mix with service assets.
+			RuntimeCall::Assets(method) => match method {
+				pallet_assets::Call::create { id, .. } => *id < (u32::MAX as AssetId).into(),
 
-                _ => true,
-            },
-            // These modules are not allowed to be called by transactions:
-            // To leave collator just shutdown it, next session funds will be released
-            // Other modules should works:
-            _ => true,
-        }
-    }
+				_ => true,
+			},
+			// These modules are not allowed to be called by transactions:
+			// To leave collator just shutdown it, next session funds will be released
+			// Other modules should works:
+			_ => true,
+		}
+	}
 }
 
 // Configure FRAME pallets to include in runtime.
@@ -337,10 +340,7 @@ impl pallet_assets::Config for Runtime {
 	type RemoveItemsLimit = ConstU32<1000>;
 	type AssetIdParameter = Compact<AssetId>;
 	type CallbackHandle = ();
-
 }
-
-
 
 parameter_types! {
 	pub FeeMultiplier: Multiplier = Multiplier::one();
@@ -361,8 +361,9 @@ impl pallet_sudo::Config for Runtime {
 }
 
 /// Configure the pallet-template in pallets/template.
-impl pallet_template::Config for Runtime {
+impl pallet_user::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
+	type StringLimit = UserStringLimit;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -381,7 +382,8 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
-		TemplateModule: pallet_template,
+		User: pallet_user,
+
 		Uniques: pallet_uniques::{Pallet, Call, Storage, Event<T>},
 		// Assets: pallet_assets = 36,
 		Assets: pallet_assets::{Pallet, Call, Storage, Event<T>},
@@ -431,7 +433,7 @@ mod benches {
 		[frame_system, SystemBench::<Runtime>]
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
-		[pallet_template, TemplateModule]
+		[pallet_user, TemplateModule]
 	);
 }
 
